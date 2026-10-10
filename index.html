@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Swara's Discovery World — Reset Password</title>
+<style>
+:root{color-scheme:light}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;display:grid;place-items:center;padding:20px;background:linear-gradient(135deg,#f6eaff,#e8f5ff);font-family:system-ui,-apple-system,Segoe UI,sans-serif;color:#29233a}
+.card{width:min(100%,440px);background:#fff;border-radius:24px;padding:28px;box-shadow:0 16px 48px #4b38751c}
+.logo{font-size:42px;text-align:center}
+h1{text-align:center;font-size:25px;margin:8px 0}
+p{line-height:1.5;color:#5e5870}
+label{display:block;margin:16px 0 6px;font-weight:650}
+input{width:100%;padding:13px;border:1px solid #cfc7e2;border-radius:12px;font:inherit}
+button{width:100%;border:0;border-radius:12px;padding:14px;margin-top:20px;background:#8064d8;color:#fff;font:inherit;font-weight:700}
+button:disabled{opacity:.6}
+#status{padding:12px;border-radius:12px;background:#f4f0ff;margin-top:16px;overflow-wrap:anywhere}
+.small{font-size:13px;text-align:center}
+[hidden]{display:none!important}
+</style>
+</head>
+<body>
+<main class="card">
+  <div class="logo">🦉✨</div>
+  <h1>Reset your password</h1>
+  <p class="small">Swara's Discovery World</p>
+  <section id="waiting">
+    <p>Checking your secure password-reset link…</p>
+  </section>
+  <form id="resetForm" hidden>
+    <p>Choose a new password for your account.</p>
+    <label for="password">New password</label>
+    <input id="password" type="password" minlength="8" autocomplete="new-password" required placeholder="At least 8 characters">
+    <label for="confirm">Confirm new password</label>
+    <input id="confirm" type="password" minlength="8" autocomplete="new-password" required placeholder="Enter it again">
+    <button id="save" type="submit">Save new password</button>
+  </form>
+  <div id="status" role="status" aria-live="polite">Opening secure recovery session…</div>
+  <p class="small">Only use this page after requesting a password reset email.</p>
+</main>
+<script type="module">
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+
+const SUPABASE_URL = 'https://ytdqwngotgugxifcttdu.supabase.co';
+const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_P81PZ4ykeKZaOdt8-Rz85w_mtVReps-';
+const supabase = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
+const form = document.getElementById('resetForm');
+const waiting = document.getElementById('waiting');
+const statusBox = document.getElementById('status');
+const saveButton = document.getElementById('save');
+let ready = false;
+
+function status(message) { statusBox.textContent = message; }
+function showForm() {
+  ready = true;
+  waiting.hidden = true;
+  form.hidden = false;
+  status('Secure link verified. Enter your new password below.');
+}
+
+async function initialize() {
+  try {
+    const url = new URL(window.location.href);
+    const code = url.searchParams.get('code');
+    if (code) {
+      const { error } = await supabase.auth.exchangeCodeForSession(code);
+      if (error) throw error;
+      url.searchParams.delete('code');
+      history.replaceState({}, document.title, url.pathname + url.search + url.hash);
+    }
+
+    const hash = new URLSearchParams(window.location.hash.slice(1));
+    const access_token = hash.get('access_token');
+    const refresh_token = hash.get('refresh_token');
+    const type = hash.get('type');
+
+    if (access_token && refresh_token) {
+      if (type && type !== 'recovery') throw new Error('This link is not a password-recovery link. Request a new reset email.');
+      const { error } = await supabase.auth.setSession({ access_token, refresh_token });
+      if (error) throw error;
+      history.replaceState({}, document.title, window.location.pathname + window.location.search);
+      showForm();
+      return;
+    }
+
+    const { data: { session }, error } = await supabase.auth.getSession();
+    if (error) throw error;
+    if (session) {
+      showForm();
+      return;
+    }
+    status('This reset link is missing or expired. Request a new password-reset email from the app.');
+    waiting.hidden = true;
+  } catch (err) {
+    status(err?.message || 'Could not verify this link. Request a new reset email.');
+    waiting.hidden = true;
+  }
+}
+
+supabase.auth.onAuthStateChange((event, session) => {
+  if (event === 'PASSWORD_RECOVERY' && session) showForm();
+});
+
+form.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  if (!ready) return;
+  const password = document.getElementById('password').value;
+  const confirm = document.getElementById('confirm').value;
+  if (password.length < 8) return status('Use at least 8 characters for your password.');
+  if (password !== confirm) return status('The passwords do not match.');
+  saveButton.disabled = true;
+  saveButton.textContent = 'Saving…';
+  try {
+    const { error } = await supabase.auth.updateUser({ password });
+    if (error) throw error;
+    form.hidden = true;
+    status('Password updated successfully! You can now return to Swara’s Discovery World and sign in with your new password.');
+    await supabase.auth.signOut();
+  } catch (err) {
+    status(err?.message || 'Could not update the password. Request a new reset email and try again.');
+  } finally {
+    saveButton.disabled = false;
+    saveButton.textContent = 'Save new password';
+  }
+});
+
+initialize();
+</script>
+</body>
+</html>
